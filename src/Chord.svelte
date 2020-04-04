@@ -20,12 +20,12 @@ const leftSpace = 20;
 const bottomSpace = 30;
 const stringSpace = 20;
 const caseSpace = 30;
-const stringCount = chord.stringTop.length;
+$: stringCount = chord.stringTop.length;
 
-const minCase = _.min(_.map(chord.fingers, x => x.case));
-const maxCase = _.max(_.map(chord.fingers, x => x.case));
-const caseTop = _.max([minCase - 1, 1]);
-const caseCount = maxCase - caseTop + 2;
+$: minCase = _.min(_.map(chord.fingers, x => x.case));
+$: maxCase = _.max(_.map(chord.fingers, x => x.case));
+$: caseTop = _.max([minCase - 1, 1]);
+$: caseCount = maxCase - caseTop + 2;
 </script>
 
 <svg width={margin * 2 + stringCount * stringSpace + leftSpace}

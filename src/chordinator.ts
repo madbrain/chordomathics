@@ -33,6 +33,7 @@ const HEIGHTS = {
 const MINOR_THIRD_INTERVAL = 3;
 const MAJOR_THIRD_INTERVAL = 4;
 const FIFTH_INTERVAL = 7;
+const SIXTH_INTERVAL = 9;
 const SEVENTH_INTERVAL = 10;
 const MAJOR_SEVENTH_INTERVAL = 11;
 
@@ -77,6 +78,7 @@ export function computeNotes(chordName: string): string[] {
     let index = 1;
     let isSharp = false;
     let isMinor = false;
+    let hasSixth = false;
     let hasSeventh = false;
     let hasMajorSeventh = false;
     if (chordName.length > index && chordName[index] == '#') {
@@ -87,7 +89,10 @@ export function computeNotes(chordName: string): string[] {
         isMinor = true;
         ++index;
     }
-    if (chordName.length > index && chordName[index] == '7') {
+    if (chordName.length > index && chordName[index] == '6') {
+        hasSixth = true;
+        ++index;
+    } else if (chordName.length > index && chordName[index] == '7') {
         hasSeventh = true;
         ++index;
     } else if (chordName.length > (index+1) && chordName.substring(index, index+2) == 'M7') {
@@ -101,6 +106,9 @@ export function computeNotes(chordName: string): string[] {
     const fifth = normalizeNote(root + FIFTH_INTERVAL);
 
     const chord = [ noteName(root), noteName(third), noteName(fifth) ];
+    if (hasSixth) {
+        chord.push(noteName(normalizeNote(root + SIXTH_INTERVAL)));
+    }
     if (hasSeventh) {
         chord.push(noteName(normalizeNote(root + (hasMajorSeventh ? MAJOR_SEVENTH_INTERVAL : SEVENTH_INTERVAL))));
     }
@@ -129,9 +137,7 @@ function computeBaseChord(chordName: string, bassNote: number, tuning: number[])
     tuning.forEach((t, i) => {
         findOnString(t, [ bassNote ]).forEach(c => {
             const fingers = [];
-            if (c != 0) {
-                fingers.push({ number: 1, case: c, from: i+1 });
-            }
+            
             const stringTop = [
                 StringState.none, StringState.none, StringState.none,
                 StringState.none, StringState.none, StringState.none
@@ -141,6 +147,8 @@ function computeBaseChord(chordName: string, bassNote: number, tuning: number[])
             }
             if (c == 0) {
                 stringTop[i] = StringState.open;
+            } else {
+                fingers.push({ number: 0, case: c, from: i+1 });
             }
             const chord: Chord = {
                 name: chordName,
@@ -178,21 +186,25 @@ function optimizeChord(chord: Chord) {
         }
     });
     // supprimer les doigts couverts par les barrés
-    const others = chord.fingers.filter(f => barres.find(b => b.case == f.case && b.from <= f.from && f.from <= b.to) == undefined);
+    const others = chord.fingers.filter(f => ! barres.some(b => b.case == f.case && b.from <= f.from && f.from <= b.to));
     return { ...chord, fingers: barres.concat(others) };
 }
 
 function assignFinger(chord: Chord) {
     const groupByCase = _.groupBy(chord.fingers, f => f.case);
-    let fingerNumber = 1;
     chord.fingers = [];
-    _.keys(groupByCase).sort().forEach(c => {
-        groupByCase[c].sort();
-        groupByCase[c].forEach(f => {
-            chord.fingers.push({...f, number: fingerNumber});
-            ++fingerNumber;
+    let fingerNumber = 1;
+    _.keys(groupByCase)
+        .map(x => parseInt(x))
+        .sort((a, b) => a - b)
+        .forEach(c => {
+            groupByCase[c]
+                .sort((a, b) => a.from - b.from)
+                .forEach(f => {
+                    chord.fingers.push({...f, number: fingerNumber});
+                    ++fingerNumber;
+                });
         });
-    });
 }
 
 export function computeChords(chordName: string, tuning: string[]): Chord[] {
@@ -211,13 +223,11 @@ export function computeChords(chordName: string, tuning: string[]): Chord[] {
             if (pendingChord.next < tuningNotes.length) {
                 findOnString(tuningNotes[pendingChord.next], notes).forEach(c => {
                     const fingers = [].concat(pendingChord.chord.fingers);
-                    if (c != 0) {
-                        const finger = _.max(fingers.map(f => f.number)) + 1;
-                        fingers.push({ number: finger, case: c, from: pendingChord.next+1 });
-                    }
                     const stringTop = [].concat(pendingChord.chord.stringTop);
                     if (c == 0) {
                         stringTop[pendingChord.next] = StringState.open;
+                    } else {
+                        fingers.push({ number: 0, case: c, from: pendingChord.next + 1 });
                     }
                     const newChord: Chord = {...pendingChord.chord,
                         stringTop,
@@ -226,7 +236,7 @@ export function computeChords(chordName: string, tuning: string[]): Chord[] {
                     work.push({ chord: newChord, next: pendingChord.next + 1 });
                 });
             } else {
-                result.unshift(pendingChord.chord);
+                result.push(pendingChord.chord);
             }
     
         });
@@ -237,13 +247,15 @@ export function computeChords(chordName: string, tuning: string[]): Chord[] {
     const MAX_SPAN = 5;
     result = result.filter(chord => {
         const cases = chord.fingers.map(f => f.case);
-        return _.max(cases) - _.min(cases) + 1 <= MAX_SPAN;
+        return cases.length == 0 || (_.max(cases) - _.min(cases) + 1) <= MAX_SPAN;
     });
     console.log("Step2", result.length);
 
     // filter by note content
     result = result.filter(chord => {
-        const chordNotes = _.uniq(chord.fingers.map(f => fingerToNote(f, tuningNotes)));
+        const fingerNotes = chord.fingers.map(f => fingerToNote(f, tuningNotes));
+        const openNotes = chord.stringTop.map((t,i) => t == StringState.open ? tuningNotes[i] : -1).filter(n => n >= 0);
+        const chordNotes = _.uniq(fingerNotes.concat(openNotes));
         return notes.length == chordNotes.length;
     });
     console.log("Step3", result.length);
@@ -261,7 +273,7 @@ export function computeChords(chordName: string, tuning: string[]): Chord[] {
     // sort by min case
     result.sort((a, b) => _.min(a.fingers.map(f => f.case)) - _.min(b.fingers.map(f => f.case)));
 
-    const MAX_CHORDS = 100;
+    const MAX_CHORDS = 200;
     if (result.length > MAX_CHORDS) {
         return result.slice(0, MAX_CHORDS);
     }

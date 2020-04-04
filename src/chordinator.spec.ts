@@ -23,6 +23,10 @@ describe('Test chordinator', () => {
         expect(computeNotes("FM7")).toEqual(["F", "A", "C", "E"]);
     });
 
+    test('should compute notes of G6', () => {
+        expect(computeNotes("G6")).toEqual(["G", "B", "D", "E"]);
+    });
+
     test('should not compute notes on empty input', () => {
         expect(computeNotes("")).toEqual([]);
     });
